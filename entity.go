@@ -127,3 +127,65 @@ func (e *Entity) WriteTo(w io.Writer) error {
 
 	return e.writeBodyTo(ew)
 }
+
+// WalkFunc is the type of the function called for each part visited by Walk.
+//
+// The path argument is a list of multipart indices leading to the part. The
+// indices start from 1. The root part has a nil path.
+//
+// If there was an encoding error walking to a part, the incoming error will
+// describe the problem and the function can decide how to handle that error.
+//
+// If an error is returned, processing stops.
+type WalkFunc func(path []int, entity *Entity, err error) error
+
+// Walk walks the entity's multipart tree, calling walkFunc for each part in
+// the tree, including the root entity.
+func (e *Entity) Walk(walkFunc WalkFunc) error {
+	var multipartReaders []MultipartReader
+	var path []int
+	part := e
+	for {
+		var err error
+		if part == nil {
+			if len(multipartReaders) == 0 {
+				break
+			}
+
+			// Get the next part from the last multipart reader
+			mr := multipartReaders[len(multipartReaders)-1]
+			part, err = mr.NextPart()
+			if err == io.EOF {
+				multipartReaders = multipartReaders[:len(multipartReaders)-1]
+				path = path[:len(path)-1]
+				continue
+			} else if IsUnknownCharset(err) {
+				// Forward the error to walkFunc
+			} else if err != nil {
+				return err
+			}
+
+			path[len(path)-1]++
+		}
+
+		// Copy the path since we'll mutate it on the next iteration
+		var pathCopy []int
+		if len(path) > 0 {
+			pathCopy = make([]int, len(path))
+			copy(pathCopy, path)
+		}
+
+		if err := walkFunc(pathCopy, part, err); err != nil {
+			return err
+		}
+
+		if mr := part.MultipartReader(); mr != nil {
+			multipartReaders = append(multipartReaders, mr)
+			path = append(path, 0)
+		}
+
+		part = nil
+	}
+
+	return nil
+}
