@@ -222,6 +222,20 @@ func TestInvalidHeader(t *testing.T) {
 	}
 }
 
+const testmalformedHeader = "not valid header\r\nValid: Header\r\n"
+
+func TestMalformedHeader(t *testing.T) {
+	r := bufio.NewReader(strings.NewReader(testmalformedHeader))
+	h, err := ReadHeader(r)
+	if err == nil {
+		t.Errorf("No error thrown")
+	}
+
+	if h.Get("Valid") != "Header" {
+		t.Errorf("Valid")
+	}
+}
+
 func TestReadHeader_TooBig(t *testing.T) {
 	testHeader := "Received: from example.com by example.org\r\n" +
 		"Received: from localhost by example.com\r\n" +

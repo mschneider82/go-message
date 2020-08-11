@@ -3,6 +3,7 @@ package textproto
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/textproto"
@@ -488,6 +489,12 @@ const (
 	maxLineOctets  = 4000
 )
 
+var (
+	ErrMalformedMimeHeaderInittialLine = errors.New("message: malformed MIME header initial line")
+	ErrMalformedMimeHeaderLine         = errors.New("message: malformed MIME header line")
+	ErrMalformedMimeHeaderKey          = errors.New("message: malformed MIME header key")
+)
+
 // ReadHeader reads a MIME header from r. The header is a sequence of possibly
 // continued Key: Value lines ending in a blank line.
 func ReadHeader(r *bufio.Reader) (Header, error) {
@@ -500,11 +507,12 @@ func ReadHeader(r *bufio.Reader) (Header, error) {
 			return newHeader(fs), err
 		}
 
-		return newHeader(fs), fmt.Errorf("message: malformed MIME header initial line: %v", string(line))
+		return newHeader(fs), fmt.Errorf("%w: %v", ErrMalformedMimeHeaderInittialLine, string(line))
 	}
 
 	maxLines := maxHeaderLines
 
+	var finalErr error
 	for {
 		var (
 			kv  []byte
@@ -513,16 +521,25 @@ func ReadHeader(r *bufio.Reader) (Header, error) {
 		maxLines, kv, err = readContinuedLineSlice(r, maxLines)
 		if len(kv) == 0 {
 			if err == io.EOF {
-				err = nil
+				//err = nil
+				return newHeader(fs), finalErr
 			}
-			return newHeader(fs), err
+			if finalErr == nil && err != nil {
+				finalErr = err
+			} else {
+				if err != nil {
+					finalErr = fmt.Errorf("%w: %v", finalErr, err)
+				}
+			}
+			return newHeader(fs), finalErr
 		}
 
 		// Key ends at first colon; should not have trailing spaces but they
 		// appear in the wild, violating specs, so we remove them if present.
 		i := bytes.IndexByte(kv, ':')
 		if i < 0 {
-			return newHeader(fs), fmt.Errorf("message: malformed MIME header line: %v", string(kv))
+			finalErr = fmt.Errorf("%w: %v", ErrMalformedMimeHeaderLine, string(kv))
+			continue
 		}
 
 		keyBytes := trim(kv[:i])
@@ -531,7 +548,9 @@ func ReadHeader(r *bufio.Reader) (Header, error) {
 		// See RFC 5322 Section 2.2
 		for _, c := range keyBytes {
 			if !validHeaderKeyByte(c) {
-				return newHeader(fs), fmt.Errorf("message: malformed MIME header key: %v", string(keyBytes))
+				finalErr = fmt.Errorf("%w: %v", ErrMalformedMimeHeaderKey, string(keyBytes))
+				continue
+				//	return newHeader(fs), )
 			}
 		}
 
@@ -550,8 +569,8 @@ func ReadHeader(r *bufio.Reader) (Header, error) {
 		value := trimAroundNewlines(v)
 		fs = append(fs, newHeaderField(key, value, kv))
 
-		if err != nil {
-			return newHeader(fs), err
+		if finalErr != nil {
+			return newHeader(fs), finalErr
 		}
 	}
 }
