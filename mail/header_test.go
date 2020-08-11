@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/emersion/go-message/mail"
+	"github.com/mschneider82/go-message/mail"
 )
 
 func TestHeader(t *testing.T) {
