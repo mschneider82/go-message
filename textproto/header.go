@@ -486,7 +486,7 @@ func trimAroundNewlines(v []byte) string {
 
 const (
 	maxHeaderLines = 1000
-	maxLineOctets  = 4000
+	maxLineOctets  = 40000
 )
 
 var (
